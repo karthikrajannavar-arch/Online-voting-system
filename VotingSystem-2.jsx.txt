@@ -1,0 +1,1355 @@
+/**
+ * ╔══════════════════════════════════════════════════════════╗
+ * ║         ELECTRA — Online Voting System                   ║
+ * ║  React SPA with simulated backend (localStorage)        ║
+ * ║  For real deployment: swap storage layer with           ║
+ * ║  Node/Express + MongoDB (see backend-notes at bottom)   ║
+ * ╚══════════════════════════════════════════════════════════╝
+ */
+
+import { useState, useEffect, useCallback, useRef } from "react";
+
+// ─── DESIGN TOKENS ──────────────────────────────────────────
+const FONTS = `
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap');
+`;
+
+const CSS = `
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink:        #0A0B14;
+    --paper:      #F4F1EB;
+    --cream:      #EDE9DF;
+    --gold:       #C9A84C;
+    --gold-light: #E8D08A;
+    --red:        #C0392B;
+    --green:      #1A6B4A;
+    --blue:       #1B3A6B;
+    --muted:      #7A7670;
+    --border:     rgba(10,11,20,0.12);
+    --shadow-sm:  0 2px 8px rgba(10,11,20,0.08);
+    --shadow-md:  0 6px 24px rgba(10,11,20,0.12);
+    --shadow-lg:  0 16px 48px rgba(10,11,20,0.16);
+    --radius:     12px;
+    --radius-lg:  20px;
+    --font-head:  'Syne', sans-serif;
+    --font-body:  'DM Sans', sans-serif;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--paper);
+    color: var(--ink);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── NOISE TEXTURE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.6;
+  }
+
+  #root { position: relative; z-index: 1; }
+
+  /* ── TYPOGRAPHY ── */
+  h1,h2,h3,h4 { font-family: var(--font-head); line-height: 1.1; }
+
+  /* ── SCROLLBAR ── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--cream); }
+  ::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 3px; }
+
+  /* ── LAYOUT ── */
+  .app-shell {
+    display: flex; flex-direction: column; min-height: 100vh;
+  }
+
+  /* ── NAVBAR ── */
+  .navbar {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(244,241,235,0.88);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 2rem;
+    display: flex; align-items: center; justify-content: space-between;
+    height: 64px;
+  }
+  .navbar-brand {
+    font-family: var(--font-head);
+    font-size: 1.5rem; font-weight: 800;
+    letter-spacing: -0.03em; color: var(--ink);
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    text-decoration: none;
+  }
+  .brand-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); }
+  .navbar-nav {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .nav-btn {
+    font-family: var(--font-body); font-size: 0.875rem; font-weight: 500;
+    padding: 8px 16px; border-radius: 8px; border: none;
+    cursor: pointer; transition: all 0.2s;
+    background: transparent; color: var(--muted);
+  }
+  .nav-btn:hover { color: var(--ink); background: var(--cream); }
+  .nav-btn.active { color: var(--ink); font-weight: 600; }
+  .nav-btn.cta {
+    background: var(--ink); color: var(--paper);
+    padding: 8px 20px;
+  }
+  .nav-btn.cta:hover { background: var(--blue); color: #fff; }
+  .nav-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.8rem; font-weight: 600; padding: 4px 10px;
+    border-radius: 20px; border: 1px solid var(--border);
+    background: var(--cream); color: var(--muted);
+  }
+  .nav-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  /* ── PAGE WRAPPER ── */
+  .page { flex: 1; padding: 3rem 2rem; max-width: 1200px; margin: 0 auto; width: 100%; }
+
+  /* ── HOME PAGE ── */
+  .hero {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4rem;
+    align-items: center; min-height: calc(100vh - 64px - 6rem);
+  }
+  .hero-eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 0.75rem; font-weight: 600; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--gold);
+    padding: 6px 14px; border-radius: 20px;
+    border: 1px solid rgba(201,168,76,0.35);
+    background: rgba(201,168,76,0.08);
+    margin-bottom: 1.5rem;
+  }
+  .hero-title {
+    font-size: clamp(2.8rem, 5vw, 4.5rem);
+    font-weight: 800; letter-spacing: -0.04em;
+    line-height: 1.0; margin-bottom: 1.5rem; color: var(--ink);
+  }
+  .hero-title em { font-style: normal; color: var(--gold); }
+  .hero-sub {
+    font-size: 1.1rem; line-height: 1.7; color: var(--muted);
+    margin-bottom: 2.5rem; max-width: 440px;
+  }
+  .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn-primary {
+    font-family: var(--font-body); font-weight: 600; font-size: 0.95rem;
+    padding: 14px 28px; border-radius: var(--radius); border: none;
+    background: var(--ink); color: var(--paper);
+    cursor: pointer; transition: all 0.25s; display: inline-flex; align-items: center; gap: 8px;
+    text-decoration: none;
+  }
+  .btn-primary:hover { background: var(--blue); transform: translateY(-2px); box-shadow: var(--shadow-md); }
+  .btn-secondary {
+    font-family: var(--font-body); font-weight: 600; font-size: 0.95rem;
+    padding: 14px 28px; border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: transparent; color: var(--ink);
+    cursor: pointer; transition: all 0.25s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-secondary:hover { background: var(--cream); border-color: var(--gold); }
+  .hero-visual {
+    display: flex; flex-direction: column; gap: 16px; position: relative;
+  }
+  .stat-card {
+    background: #fff; border-radius: var(--radius-lg); padding: 1.5rem;
+    border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+    transition: transform 0.3s, box-shadow 0.3s;
+  }
+  .stat-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+  .stat-card.accent { background: var(--ink); color: var(--paper); }
+  .stat-card.accent .stat-label { color: rgba(244,241,235,0.55); }
+  .stat-num { font-family: var(--font-head); font-size: 2.4rem; font-weight: 800; letter-spacing: -0.04em; }
+  .stat-label { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+  .stat-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .features-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+    margin-top: 4rem;
+  }
+  .feature-card {
+    background: #fff; border-radius: var(--radius); padding: 1.5rem;
+    border: 1px solid var(--border); text-align: center;
+    transition: all 0.25s;
+  }
+  .feature-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-md); }
+  .feature-icon {
+    font-size: 2rem; margin-bottom: 0.75rem; display: block;
+  }
+  .feature-title { font-family: var(--font-head); font-size: 1rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .feature-desc { font-size: 0.85rem; color: var(--muted); line-height: 1.6; }
+
+  /* ── AUTH PAGE ── */
+  .auth-container {
+    display: flex; justify-content: center; align-items: flex-start;
+    padding: 2rem 1rem;
+  }
+  .auth-card {
+    background: #fff; border-radius: var(--radius-lg); padding: 2.5rem;
+    border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+    width: 100%; max-width: 460px;
+  }
+  .auth-header { text-align: center; margin-bottom: 2rem; }
+  .auth-header h2 { font-size: 1.8rem; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+  .auth-header p { color: var(--muted); font-size: 0.9rem; }
+  .auth-tabs {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+    background: var(--cream); border-radius: 10px; padding: 4px;
+    margin-bottom: 1.5rem;
+  }
+  .auth-tab {
+    font-family: var(--font-body); font-size: 0.875rem; font-weight: 500;
+    padding: 10px; border-radius: 8px; border: none; cursor: pointer;
+    background: transparent; color: var(--muted); transition: all 0.2s;
+  }
+  .auth-tab.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: var(--shadow-sm); }
+  .form-group { margin-bottom: 1.25rem; }
+  .form-label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+  .form-input {
+    width: 100%; padding: 12px 14px; border-radius: var(--radius);
+    border: 1.5px solid var(--border); font-family: var(--font-body); font-size: 0.95rem;
+    background: var(--paper); color: var(--ink); transition: all 0.2s; outline: none;
+  }
+  .form-input:focus { border-color: var(--gold); background: #fff; box-shadow: 0 0 0 3px rgba(201,168,76,0.15); }
+  .form-input::placeholder { color: var(--muted); }
+  .form-select {
+    width: 100%; padding: 12px 14px; border-radius: var(--radius);
+    border: 1.5px solid var(--border); font-family: var(--font-body); font-size: 0.95rem;
+    background: var(--paper); color: var(--ink); cursor: pointer; outline: none;
+  }
+  .form-select:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,0.15); }
+  .btn-full { width: 100%; padding: 14px; font-size: 1rem; justify-content: center; }
+  .form-footer { text-align: center; font-size: 0.85rem; color: var(--muted); margin-top: 1rem; }
+  .form-footer span { color: var(--blue); cursor: pointer; font-weight: 600; }
+  .form-footer span:hover { text-decoration: underline; }
+  .role-selector { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 1.5rem; }
+  .role-btn {
+    padding: 12px; border-radius: var(--radius); border: 1.5px solid var(--border);
+    background: transparent; cursor: pointer; font-family: var(--font-body);
+    font-size: 0.9rem; font-weight: 500; transition: all 0.2s; text-align: center;
+  }
+  .role-btn.selected { border-color: var(--gold); background: rgba(201,168,76,0.1); color: var(--ink); font-weight: 700; }
+  .role-btn:hover:not(.selected) { border-color: var(--muted); }
+  .voter-id-display {
+    background: var(--cream); border-radius: var(--radius); padding: 1rem;
+    text-align: center; margin-top: 1rem; border: 1px dashed var(--gold);
+  }
+  .voter-id-display .vid { font-family: var(--font-head); font-size: 1.4rem; font-weight: 800; letter-spacing: 0.1em; color: var(--blue); }
+
+  /* ── DASHBOARD / VOTING ── */
+  .dash-header { margin-bottom: 2rem; }
+  .dash-title { font-size: 2rem; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+  .dash-meta { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.78rem; font-weight: 600; padding: 4px 10px;
+    border-radius: 20px;
+  }
+  .badge-green { background: rgba(26,107,74,0.1); color: var(--green); }
+  .badge-red { background: rgba(192,57,43,0.1); color: var(--red); }
+  .badge-gold { background: rgba(201,168,76,0.15); color: #8B6914; }
+  .badge-blue { background: rgba(27,58,107,0.1); color: var(--blue); }
+  .search-bar {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 2rem;
+  }
+  .search-input {
+    flex: 1; padding: 12px 16px; border-radius: var(--radius);
+    border: 1.5px solid var(--border); font-family: var(--font-body); font-size: 0.95rem;
+    background: #fff; outline: none; transition: all 0.2s;
+  }
+  .search-input:focus { border-color: var(--gold); box-shadow: 0 0 0 3px rgba(201,168,76,0.15); }
+  .filter-select {
+    padding: 12px 16px; border-radius: var(--radius); border: 1.5px solid var(--border);
+    font-family: var(--font-body); font-size: 0.9rem; background: #fff;
+    cursor: pointer; outline: none; color: var(--ink);
+  }
+  .candidates-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px;
+  }
+  .candidate-card {
+    background: #fff; border-radius: var(--radius-lg); border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm); overflow: hidden;
+    transition: transform 0.25s, box-shadow 0.25s;
+    position: relative;
+  }
+  .candidate-card:hover { transform: translateY(-6px); box-shadow: var(--shadow-md); }
+  .candidate-card.voted { border-color: var(--gold); }
+  .candidate-card.voted::after {
+    content: 'YOUR VOTE';
+    position: absolute; top: 12px; right: 12px;
+    background: var(--gold); color: #fff;
+    font-size: 0.65rem; font-weight: 800; letter-spacing: 0.1em;
+    padding: 3px 8px; border-radius: 20px;
+  }
+  .candidate-img-wrap {
+    height: 180px; background: var(--cream);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    position: relative;
+  }
+  .candidate-avatar {
+    width: 90px; height: 90px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-head); font-size: 2rem; font-weight: 800;
+    color: #fff; letter-spacing: -0.04em;
+    box-shadow: var(--shadow-md);
+  }
+  .candidate-body { padding: 1.25rem; }
+  .candidate-name { font-family: var(--font-head); font-size: 1.15rem; font-weight: 700; margin-bottom: 4px; }
+  .candidate-party {
+    font-size: 0.82rem; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;
+  }
+  .candidate-bio { font-size: 0.875rem; color: var(--muted); line-height: 1.6; margin-bottom: 1rem; }
+  .vote-bar-wrap { margin-bottom: 1rem; }
+  .vote-bar-label { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
+  .vote-bar-track { height: 6px; background: var(--cream); border-radius: 3px; overflow: hidden; }
+  .vote-bar-fill { height: 100%; border-radius: 3px; background: var(--gold); transition: width 0.8s cubic-bezier(0.22, 1, 0.36, 1); }
+  .btn-vote {
+    width: 100%; padding: 11px; border-radius: var(--radius); border: 1.5px solid var(--ink);
+    background: var(--ink); color: var(--paper);
+    font-family: var(--font-body); font-size: 0.9rem; font-weight: 600;
+    cursor: pointer; transition: all 0.2s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .btn-vote:hover:not(:disabled) { background: var(--blue); border-color: var(--blue); }
+  .btn-vote:disabled { background: var(--cream); border-color: var(--border); color: var(--muted); cursor: not-allowed; }
+  .btn-vote.voted-btn { background: rgba(26,107,74,0.1); border-color: var(--green); color: var(--green); cursor: default; }
+  .voted-banner {
+    background: rgba(26,107,74,0.06); border: 1px solid rgba(26,107,74,0.25);
+    border-radius: var(--radius); padding: 0.75rem 1rem;
+    font-size: 0.85rem; color: var(--green); font-weight: 500;
+    display: flex; align-items: center; gap: 8px; margin-bottom: 1.5rem;
+  }
+
+  /* ── RESULTS PAGE ── */
+  .results-header { margin-bottom: 2.5rem; }
+  .results-lead { font-size: 1.8rem; letter-spacing: -0.03em; margin-bottom: 0.5rem; }
+  .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 3rem; }
+  .results-card {
+    background: #fff; border-radius: var(--radius-lg); padding: 1.75rem;
+    border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  }
+  .results-card h3 { font-family: var(--font-head); font-size: 1rem; font-weight: 700; margin-bottom: 1.5rem; letter-spacing: -0.01em; }
+  .result-row {
+    display: flex; align-items: center; gap: 12px; margin-bottom: 1rem;
+  }
+  .result-rank {
+    font-family: var(--font-head); font-size: 1.25rem; font-weight: 800;
+    color: var(--muted); min-width: 28px;
+  }
+  .result-rank.gold { color: var(--gold); }
+  .result-avatar-sm {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-head); font-size: 0.9rem; font-weight: 800; color: #fff;
+    flex-shrink: 0;
+  }
+  .result-info { flex: 1; min-width: 0; }
+  .result-name { font-weight: 600; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .result-party { font-size: 0.75rem; color: var(--muted); }
+  .result-votes { font-family: var(--font-head); font-size: 1.1rem; font-weight: 800; }
+  .result-bar-wrap { margin-top: 6px; }
+  .result-bar-track { height: 4px; background: var(--cream); border-radius: 2px; }
+  .result-bar-fill { height: 100%; border-radius: 2px; transition: width 1s cubic-bezier(0.22, 1, 0.36, 1); }
+
+  /* Pie chart (CSS) */
+  .pie-chart-wrap { display: flex; align-items: center; gap: 2rem; }
+  .pie-svg { flex-shrink: 0; }
+  .pie-legend { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  /* Stats summary */
+  .summary-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 2rem; }
+  .summary-stat {
+    background: #fff; border-radius: var(--radius); padding: 1.25rem;
+    border: 1px solid var(--border); text-align: center;
+  }
+  .summary-stat .num { font-family: var(--font-head); font-size: 1.8rem; font-weight: 800; letter-spacing: -0.04em; }
+  .summary-stat .lbl { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+  .winner-spotlight {
+    background: var(--ink); color: var(--paper); border-radius: var(--radius-lg); padding: 2rem;
+    display: flex; align-items: center; gap: 2rem; margin-bottom: 2rem;
+    overflow: hidden; position: relative;
+  }
+  .winner-spotlight::before {
+    content: ''; position: absolute; right: -40px; top: -40px;
+    width: 200px; height: 200px; border-radius: 50%;
+    background: rgba(201,168,76,0.12);
+  }
+  .winner-avatar {
+    width: 72px; height: 72px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-head); font-size: 1.8rem; font-weight: 800; color: #fff;
+    border: 3px solid var(--gold); flex-shrink: 0;
+  }
+  .winner-info .crown { font-size: 1.5rem; display: block; margin-bottom: 4px; }
+  .winner-info .name { font-family: var(--font-head); font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; }
+  .winner-info .sub { font-size: 0.85rem; color: rgba(244,241,235,0.6); margin-top: 4px; }
+
+  /* ── ADMIN PAGE ── */
+  .admin-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 24px; }
+  .admin-card {
+    background: #fff; border-radius: var(--radius-lg); padding: 1.75rem;
+    border: 1px solid var(--border); box-shadow: var(--shadow-sm);
+  }
+  .admin-card h3 { font-family: var(--font-head); font-size: 1.1rem; font-weight: 700; margin-bottom: 1.25rem; }
+  .candidate-list-item {
+    display: flex; align-items: center; gap: 12px; padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .candidate-list-item:last-child { border-bottom: none; }
+  .candi-avatar-xs {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-head); font-size: 0.85rem; font-weight: 800; color: #fff;
+    flex-shrink: 0;
+  }
+  .candi-name { font-weight: 600; font-size: 0.9rem; }
+  .candi-party { font-size: 0.75rem; color: var(--muted); }
+  .candi-votes { font-family: var(--font-head); font-size: 1rem; font-weight: 800; margin-left: auto; }
+  .btn-delete {
+    background: none; border: none; cursor: pointer; color: var(--muted);
+    font-size: 1rem; padding: 4px; border-radius: 6px; transition: all 0.2s;
+    margin-left: 8px;
+  }
+  .btn-delete:hover { color: var(--red); background: rgba(192,57,43,0.1); }
+  .voters-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .voters-table th {
+    text-align: left; padding: 8px 12px; font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+    border-bottom: 1px solid var(--border); background: var(--cream);
+  }
+  .voters-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--ink); }
+  .voters-table tr:last-child td { border-bottom: none; }
+
+  /* ── PROFILE PAGE ── */
+  .profile-layout { display: grid; grid-template-columns: 280px 1fr; gap: 24px; }
+  .profile-card {
+    background: #fff; border-radius: var(--radius-lg); padding: 2rem;
+    border: 1px solid var(--border); box-shadow: var(--shadow-sm); text-align: center;
+    height: fit-content;
+  }
+  .profile-avatar {
+    width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 1rem;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-head); font-size: 2rem; font-weight: 800;
+    color: #fff; background: var(--blue);
+  }
+  .profile-name { font-family: var(--font-head); font-size: 1.3rem; font-weight: 700; margin-bottom: 4px; }
+  .profile-id { font-size: 0.8rem; color: var(--muted); font-family: monospace; margin-bottom: 1rem; }
+  .profile-info-grid { display: grid; gap: 12px; }
+  .info-row { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 12px; background: var(--cream); border-radius: var(--radius); }
+  .info-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .info-value { font-size: 0.9rem; font-weight: 500; color: var(--ink); }
+  .activity-log { background: #fff; border-radius: var(--radius-lg); padding: 1.75rem; border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+  .activity-log h3 { font-family: var(--font-head); font-size: 1.1rem; font-weight: 700; margin-bottom: 1.25rem; }
+  .log-entry { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .log-entry:last-child { border-bottom: none; }
+  .log-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+  .log-icon.green { background: rgba(26,107,74,0.1); }
+  .log-icon.blue { background: rgba(27,58,107,0.1); }
+  .log-text { font-size: 0.875rem; line-height: 1.5; }
+  .log-time { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(10,11,20,0.55); backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center; padding: 1rem;
+  }
+  .modal-box {
+    background: #fff; border-radius: var(--radius-lg); padding: 2.5rem;
+    box-shadow: var(--shadow-lg); width: 100%; max-width: 420px; text-align: center;
+    animation: popIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes popIn { from { transform: scale(0.88) translateY(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .modal-icon { font-size: 3rem; margin-bottom: 1rem; display: block; }
+  .modal-title { font-family: var(--font-head); font-size: 1.5rem; font-weight: 800; margin-bottom: 0.75rem; }
+  .modal-sub { font-size: 0.9rem; color: var(--muted); line-height: 1.6; margin-bottom: 1.75rem; }
+  .modal-actions { display: flex; gap: 10px; justify-content: center; }
+
+  /* ── TOAST ── */
+  .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 2000; display: flex; flex-direction: column; gap: 8px; }
+  .toast {
+    background: var(--ink); color: var(--paper);
+    padding: 14px 20px; border-radius: var(--radius); font-size: 0.875rem;
+    box-shadow: var(--shadow-lg); display: flex; align-items: center; gap: 10px;
+    animation: slideIn 0.3s ease;
+    border-left: 3px solid var(--gold);
+  }
+  .toast.success { border-left-color: var(--green); }
+  .toast.error { border-left-color: var(--red); }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* ── FOOTER ── */
+  .footer {
+    padding: 2rem; text-align: center; border-top: 1px solid var(--border);
+    font-size: 0.82rem; color: var(--muted);
+  }
+
+  /* ── LOADING SPINNER ── */
+  .spinner {
+    width: 20px; height: 20px; border: 2px solid rgba(244,241,235,0.3);
+    border-top-color: #fff; border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── EMPTY STATE ── */
+  .empty-state { text-align: center; padding: 4rem 2rem; }
+  .empty-icon { font-size: 3rem; display: block; margin-bottom: 1rem; }
+  .empty-title { font-family: var(--font-head); font-size: 1.2rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .empty-sub { color: var(--muted); font-size: 0.9rem; }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+  .fade-in { animation: fadeIn 0.4s ease both; }
+  .fade-in-d1 { animation: fadeIn 0.4s 0.1s ease both; }
+  .fade-in-d2 { animation: fadeIn 0.4s 0.2s ease both; }
+  .fade-in-d3 { animation: fadeIn 0.4s 0.3s ease both; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; gap: 2rem; min-height: auto; padding: 2rem 0; }
+    .hero-visual { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .features-strip { grid-template-columns: 1fr 1fr; }
+    .results-grid { grid-template-columns: 1fr; }
+    .admin-grid { grid-template-columns: 1fr; }
+    .profile-layout { grid-template-columns: 1fr; }
+    .summary-stats { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 600px) {
+    .page { padding: 1.5rem 1rem; }
+    .navbar { padding: 0 1rem; }
+    .hero-title { font-size: 2.4rem; }
+    .features-strip { grid-template-columns: 1fr; }
+    .candidates-grid { grid-template-columns: 1fr; }
+    .summary-stats { grid-template-columns: 1fr 1fr; }
+    .navbar-nav { gap: 4px; }
+    .nav-btn { padding: 6px 10px; font-size: 0.8rem; }
+  }
+`;
+
+// ─── PALETTE for candidates ──────────────────────────────────
+const PALETTES = [
+  '#1B3A6B','#C9A84C','#1A6B4A','#8B2252','#2D4A8B','#6B3A1A',
+  '#4A6B1A','#6B1A3A','#1A4A6B','#3A1A6B'
+];
+
+// ─── INITIAL CANDIDATES ──────────────────────────────────────
+const INITIAL_CANDIDATES = [
+  { id: 'c1', name: 'Aarav Mehta', party: 'Progressive Alliance', votes: 0, bio: 'Champion of digital literacy and sustainable campus growth.' },
+  { id: 'c2', name: 'Priya Sharma', party: 'Students First', votes: 0, bio: 'Focused on mental health resources and academic welfare.' },
+  { id: 'c3', name: 'Rohan Gupta', party: 'Innovation Party', votes: 0, bio: 'Pushing for startup incubators and industry partnerships.' },
+  { id: 'c4', name: 'Nisha Patel', party: 'Green Futures', votes: 0, bio: 'Advocating for eco-friendly campus policies and green spaces.' },
+  { id: 'c5', name: 'Vikram Singh', party: 'United Front', votes: 0, bio: 'Building bridges between departments for a unified voice.' },
+  { id: 'c6', name: 'Ananya Roy', party: 'Cultural Collective', votes: 0, bio: 'Promoting diversity, arts programs, and cultural exchange.' },
+];
+
+// ─── STORAGE HELPERS ─────────────────────────────────────────
+const load = (key, fallback) => {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+  catch { return fallback; }
+};
+const save = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
+
+// ─── UTILS ───────────────────────────────────────────────────
+const genVoterId = () => 'VTR-' + Math.random().toString(36).substr(2,4).toUpperCase() + '-' + Date.now().toString(36).toUpperCase();
+const hashPass = (p) => btoa(p + '_salt_electra_2026'); // simple obfuscation (real: bcrypt)
+const initials = (name) => name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
+const colorFor = (id) => PALETTES[Math.abs(id.split('').reduce((a,c) => a + c.charCodeAt(0), 0)) % PALETTES.length];
+const fmtTime = (ts) => new Date(ts).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+
+// ─── ROOT APP ────────────────────────────────────────────────
+export default function App() {
+  const [page, setPage] = useState('home');
+  const [currentUser, setCurrentUser] = useState(() => load('ev_user', null));
+  const [users, setUsers] = useState(() => load('ev_users', [
+    { id: 'admin1', name: 'Admin', email: 'admin@electra.in', password: hashPass('admin123'), role: 'admin', voterId: 'ADMIN-001', voted: false, registeredAt: Date.now() }
+  ]));
+  const [candidates, setCandidates] = useState(() => load('ev_candidates', INITIAL_CANDIDATES));
+  const [toasts, setToasts] = useState([]);
+  const [modal, setModal] = useState(null); // { title, sub, icon, onConfirm, confirmLabel }
+  const [activityLog, setActivityLog] = useState(() => load('ev_log', []));
+
+  // Persist
+  useEffect(() => { save('ev_users', users); }, [users]);
+  useEffect(() => { save('ev_candidates', candidates); }, [candidates]);
+  useEffect(() => { save('ev_user', currentUser); }, [currentUser]);
+  useEffect(() => { save('ev_log', activityLog); }, [activityLog]);
+
+  const addToast = useCallback((msg, type = 'info') => {
+    const id = Date.now();
+    setToasts(t => [...t, { id, msg, type }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500);
+  }, []);
+
+  const addLog = useCallback((text, icon = 'blue') => {
+    setActivityLog(l => [{ text, icon, ts: Date.now() }, ...l].slice(0, 30));
+  }, []);
+
+  const totalVotes = candidates.reduce((s, c) => s + c.votes, 0);
+
+  const navigate = (p) => { setPage(p); window.scrollTo(0,0); };
+
+  const logout = () => {
+    setCurrentUser(null);
+    navigate('home');
+    addToast('Logged out successfully.', 'info');
+  };
+
+  return (
+    <>
+      <style>{FONTS}{CSS}</style>
+      <div className="app-shell">
+        <Navbar currentUser={currentUser} page={page} navigate={navigate} logout={logout} />
+        <main>
+          {page === 'home'    && <HomePage navigate={navigate} candidates={candidates} totalVotes={totalVotes} />}
+          {page === 'auth'    && <AuthPage users={users} setUsers={setUsers} setCurrentUser={setCurrentUser} navigate={navigate} addToast={addToast} addLog={addLog} />}
+          {page === 'vote'    && <VotePage currentUser={currentUser} candidates={candidates} setCandidates={setCandidates} users={users} setUsers={setUsers} setCurrentUser={setCurrentUser} navigate={navigate} addToast={addToast} setModal={setModal} addLog={addLog} totalVotes={totalVotes} />}
+          {page === 'results' && <ResultsPage candidates={candidates} totalVotes={totalVotes} users={users} />}
+          {page === 'admin'   && <AdminPage currentUser={currentUser} candidates={candidates} setCandidates={setCandidates} users={users} addToast={addToast} setModal={setModal} addLog={addLog} />}
+          {page === 'profile' && <ProfilePage currentUser={currentUser} candidates={candidates} activityLog={activityLog} />}
+        </main>
+        <footer className="footer">© 2026 Electra Voting System · Built for Technophilia 2026</footer>
+      </div>
+
+      {/* Modal */}
+      {modal && (
+        <div className="modal-overlay" onClick={() => setModal(null)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <span className="modal-icon">{modal.icon}</span>
+            <div className="modal-title">{modal.title}</div>
+            <div className="modal-sub">{modal.sub}</div>
+            <div className="modal-actions">
+              <button className="btn-secondary" onClick={() => setModal(null)}>Cancel</button>
+              <button className="btn-primary" onClick={() => { modal.onConfirm(); setModal(null); }}>
+                {modal.confirmLabel || 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toasts */}
+      <div className="toast-container">
+        {toasts.map(t => (
+          <div key={t.id} className={`toast ${t.type}`}>
+            {t.type === 'success' ? '✓' : t.type === 'error' ? '✕' : 'ℹ'} {t.msg}
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// ─── NAVBAR ──────────────────────────────────────────────────
+function Navbar({ currentUser, page, navigate, logout }) {
+  const isAdmin = currentUser?.role === 'admin';
+  return (
+    <nav className="navbar">
+      <div className="navbar-brand" onClick={() => navigate('home')}>
+        <div className="brand-dot" />
+        ELECTRA
+      </div>
+      <div className="navbar-nav">
+        {currentUser ? (
+          <>
+            <button className={`nav-btn ${page==='vote'?'active':''}`} onClick={() => navigate('vote')}>Vote</button>
+            <button className={`nav-btn ${page==='results'?'active':''}`} onClick={() => navigate('results')}>Results</button>
+            {isAdmin && <button className={`nav-btn ${page==='admin'?'active':''}`} onClick={() => navigate('admin')}>Admin</button>}
+            <button className={`nav-btn ${page==='profile'?'active':''}`} onClick={() => navigate('profile')}>Profile</button>
+            <span className="nav-badge"><span className="dot" />{currentUser.name.split(' ')[0]}</span>
+            <button className="nav-btn" onClick={logout}>Logout</button>
+          </>
+        ) : (
+          <>
+            <button className={`nav-btn ${page==='results'?'active':''}`} onClick={() => navigate('results')}>Live Results</button>
+            <button className="nav-btn cta" onClick={() => navigate('auth')}>Login / Register</button>
+          </>
+        )}
+      </div>
+    </nav>
+  );
+}
+
+// ─── HOME PAGE ───────────────────────────────────────────────
+function HomePage({ navigate, candidates, totalVotes }) {
+  return (
+    <div className="page">
+      <div className="hero">
+        <div>
+          <div className="hero-eyebrow fade-in">🗳 Secure · Transparent · Democratic</div>
+          <h1 className="hero-title fade-in-d1">Vote for the<br /><em>Future</em> You<br />Believe In</h1>
+          <p className="hero-sub fade-in-d2">Electra is a modern, tamper-proof voting platform built for college elections. Every vote counts — securely and anonymously.</p>
+          <div className="hero-actions fade-in-d3">
+            <button className="btn-primary" onClick={() => navigate('auth')}>Get Started →</button>
+            <button className="btn-secondary" onClick={() => navigate('results')}>View Live Results</button>
+          </div>
+        </div>
+        <div className="hero-visual fade-in-d2">
+          <div className="stat-card accent">
+            <div className="stat-num">{totalVotes}</div>
+            <div className="stat-label">Total votes cast</div>
+          </div>
+          <div className="stat-row">
+            <div className="stat-card">
+              <div className="stat-num">{candidates.length}</div>
+              <div className="stat-label">Candidates</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-num">100%</div>
+              <div className="stat-label">Secure</div>
+            </div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-num">Live</div>
+            <div className="stat-label">Real-time result updates</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="features-strip">
+        {[
+          { icon: '🔐', title: 'One Person, One Vote', desc: 'Cryptographic checks prevent any voter from casting more than one ballot.' },
+          { icon: '📊', title: 'Live Results', desc: 'Watch vote counts update in real time with beautiful charts.' },
+          { icon: '🆔', title: 'Unique Voter ID', desc: 'Every registered voter receives a unique, system-generated voter ID.' },
+          { icon: '👤', title: 'Voter Profiles', desc: 'View your registration details, voter ID, and voting activity.' },
+          { icon: '🛡️', title: 'Encrypted Passwords', desc: 'Passwords are hashed before storage — never stored in plain text.' },
+          { icon: '⚙️', title: 'Admin Controls', desc: 'Admins can add/remove candidates and monitor election in real time.' },
+        ].map(f => (
+          <div className="feature-card" key={f.title}>
+            <span className="feature-icon">{f.icon}</span>
+            <div className="feature-title">{f.title}</div>
+            <div className="feature-desc">{f.desc}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── AUTH PAGE ───────────────────────────────────────────────
+function AuthPage({ users, setUsers, setCurrentUser, navigate, addToast, addLog }) {
+  const [tab, setTab] = useState('login'); // login | register
+  const [role, setRole] = useState('voter');
+  const [form, setForm] = useState({ name:'', email:'', password:'', confirmPass:'', adminCode:'' });
+  const [newVoterId, setNewVoterId] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const handleLogin = () => {
+    if (!form.email || !form.password) return addToast('Please fill all fields.', 'error');
+    setLoading(true);
+    setTimeout(() => {
+      const user = users.find(u => u.email === form.email && u.password === hashPass(form.password));
+      setLoading(false);
+      if (!user) return addToast('Invalid email or password.', 'error');
+      setCurrentUser(user);
+      addLog(`Logged in as ${user.name}`, 'blue');
+      addToast(`Welcome back, ${user.name.split(' ')[0]}!`, 'success');
+      navigate(user.role === 'admin' ? 'admin' : 'vote');
+    }, 600);
+  };
+
+  const handleRegister = () => {
+    if (!form.name || !form.email || !form.password) return addToast('Please fill all required fields.', 'error');
+    if (form.password !== form.confirmPass) return addToast('Passwords do not match.', 'error');
+    if (form.password.length < 6) return addToast('Password must be at least 6 characters.', 'error');
+    if (users.find(u => u.email === form.email)) return addToast('Email already registered.', 'error');
+    if (role === 'admin' && form.adminCode !== 'ELECTRA2026') return addToast('Invalid admin code.', 'error');
+    setLoading(true);
+    setTimeout(() => {
+      const vid = genVoterId();
+      const newUser = {
+        id: 'u' + Date.now(),
+        name: form.name, email: form.email,
+        password: hashPass(form.password),
+        role, voterId: vid, voted: false,
+        registeredAt: Date.now()
+      };
+      setUsers(u => [...u, newUser]);
+      setNewVoterId(vid);
+      setLoading(false);
+      addLog(`New ${role} registered: ${form.name}`, 'green');
+      addToast('Registration successful!', 'success');
+      // auto-login after 2s
+      setTimeout(() => {
+        setCurrentUser(newUser);
+        navigate(role === 'admin' ? 'admin' : 'vote');
+      }, 2000);
+    }, 700);
+  };
+
+  return (
+    <div className="page">
+      <div className="auth-container">
+        <div className="auth-card fade-in">
+          <div className="auth-header">
+            <h2>Welcome to Electra</h2>
+            <p>Your secure digital ballot box</p>
+          </div>
+          <div className="auth-tabs">
+            <button className={`auth-tab ${tab==='login'?'active':''}`} onClick={() => setTab('login')}>Sign In</button>
+            <button className={`auth-tab ${tab==='register'?'active':''}`} onClick={() => setTab('register')}>Register</button>
+          </div>
+
+          {tab === 'login' ? (
+            <>
+              <div className="form-group">
+                <label className="form-label">Email Address</label>
+                <input className="form-input" type="email" placeholder="you@college.edu" value={form.email} onChange={set('email')} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input className="form-input" type="password" placeholder="Enter password" value={form.password} onChange={set('password')}
+                  onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+              </div>
+              <button className="btn-primary btn-full" onClick={handleLogin} disabled={loading}>
+                {loading ? <span className="spinner" /> : 'Sign In →'}
+              </button>
+              <div className="form-footer">
+                <span style={{display:'block', marginTop:'8px', fontSize:'0.78rem', color:'#8B6914', background:'rgba(201,168,76,0.1)', padding:'8px', borderRadius:'8px'}}>
+                  Demo: admin@electra.in / admin123
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-group">
+                <label className="form-label">I am a</label>
+                <div className="role-selector">
+                  <button className={`role-btn ${role==='voter'?'selected':''}`} onClick={() => setRole('voter')}>🗳 Voter</button>
+                  <button className={`role-btn ${role==='admin'?'selected':''}`} onClick={() => setRole('admin')}>⚙️ Admin</button>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Full Name</label>
+                <input className="form-input" placeholder="Your full name" value={form.name} onChange={set('name')} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Email Address</label>
+                <input className="form-input" type="email" placeholder="you@college.edu" value={form.email} onChange={set('email')} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input className="form-input" type="password" placeholder="Min. 6 characters" value={form.password} onChange={set('password')} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Confirm Password</label>
+                <input className="form-input" type="password" placeholder="Repeat password" value={form.confirmPass} onChange={set('confirmPass')} />
+              </div>
+              {role === 'admin' && (
+                <div className="form-group">
+                  <label className="form-label">Admin Code</label>
+                  <input className="form-input" placeholder="Enter admin code" value={form.adminCode} onChange={set('adminCode')} />
+                  <div style={{fontSize:'0.75rem', color:'var(--muted)', marginTop:'4px'}}>Demo code: ELECTRA2026</div>
+                </div>
+              )}
+              <button className="btn-primary btn-full" onClick={handleRegister} disabled={loading}>
+                {loading ? <span className="spinner" /> : 'Create Account →'}
+              </button>
+              {newVoterId && (
+                <div className="voter-id-display">
+                  <div style={{fontSize:'0.8rem', color:'var(--muted)', marginBottom:'4px'}}>Your Voter ID</div>
+                  <div className="vid">{newVoterId}</div>
+                  <div style={{fontSize:'0.75rem', color:'var(--muted)', marginTop:'4px'}}>Save this ID · Redirecting…</div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── VOTE PAGE ───────────────────────────────────────────────
+function VotePage({ currentUser, candidates, setCandidates, users, setUsers, setCurrentUser, navigate, addToast, setModal, addLog, totalVotes }) {
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+
+  if (!currentUser) {
+    return (
+      <div className="page">
+        <div className="empty-state">
+          <span className="empty-icon">🔒</span>
+          <div className="empty-title">Please log in to vote</div>
+          <div className="empty-sub">You need to be registered and logged in.</div>
+          <button className="btn-primary" style={{marginTop:'1.5rem'}} onClick={() => navigate('auth')}>Login / Register</button>
+        </div>
+      </div>
+    );
+  }
+
+  const parties = ['all', ...new Set(candidates.map(c => c.party))];
+  const filtered = candidates
+    .filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || c.party.toLowerCase().includes(search.toLowerCase()))
+    .filter(c => filter === 'all' || c.party === filter);
+
+  const hasVoted = currentUser.voted;
+  const votedForId = currentUser.votedFor;
+
+  const castVote = (candidate) => {
+    if (hasVoted) return addToast('You have already voted!', 'error');
+    setModal({
+      icon: '🗳',
+      title: `Vote for ${candidate.name}?`,
+      sub: `${candidate.party} · This action cannot be undone. Your vote is final.`,
+      confirmLabel: 'Confirm Vote',
+      onConfirm: () => {
+        // Update candidate vote count
+        setCandidates(cs => cs.map(c => c.id === candidate.id ? { ...c, votes: c.votes + 1 } : c));
+        // Mark user as voted
+        const updated = { ...currentUser, voted: true, votedFor: candidate.id, votedAt: Date.now() };
+        setCurrentUser(updated);
+        setUsers(us => us.map(u => u.id === currentUser.id ? updated : u));
+        addLog(`Voted for ${candidate.name}`, 'green');
+        addToast(`✓ Vote cast for ${candidate.name}!`, 'success');
+      }
+    });
+  };
+
+  return (
+    <div className="page fade-in">
+      <div className="dash-header">
+        <h2 className="dash-title">Voting Dashboard</h2>
+        <div className="dash-meta">
+          <span className="badge badge-blue">👤 {currentUser.name}</span>
+          <span className="badge badge-gold">🆔 {currentUser.voterId}</span>
+          {hasVoted
+            ? <span className="badge badge-green">✓ Voted</span>
+            : <span className="badge badge-red">○ Not yet voted</span>}
+          <span className="badge badge-blue">📊 {totalVotes} total votes</span>
+        </div>
+      </div>
+
+      {hasVoted && (
+        <div className="voted-banner">
+          ✅ You have already cast your vote. Thank you for participating in this election!
+        </div>
+      )}
+
+      <div className="search-bar">
+        <input className="search-input" placeholder="Search candidates or parties…" value={search} onChange={e => setSearch(e.target.value)} />
+        <select className="filter-select" value={filter} onChange={e => setFilter(e.target.value)}>
+          {parties.map(p => <option key={p} value={p}>{p === 'all' ? 'All Parties' : p}</option>)}
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="empty-state">
+          <span className="empty-icon">🔍</span>
+          <div className="empty-title">No candidates found</div>
+          <div className="empty-sub">Try adjusting your search or filter.</div>
+        </div>
+      ) : (
+        <div className="candidates-grid">
+          {filtered.map(c => {
+            const pct = totalVotes > 0 ? Math.round((c.votes / totalVotes) * 100) : 0;
+            const isVotedFor = votedForId === c.id;
+            return (
+              <div key={c.id} className={`candidate-card${isVotedFor ? ' voted' : ''}`}>
+                <div className="candidate-img-wrap">
+                  <div className="candidate-avatar" style={{ background: colorFor(c.id) }}>
+                    {initials(c.name)}
+                  </div>
+                </div>
+                <div className="candidate-body">
+                  <div className="candidate-name">{c.name}</div>
+                  <div className="candidate-party">{c.party}</div>
+                  <div className="candidate-bio">{c.bio}</div>
+                  <div className="vote-bar-wrap">
+                    <div className="vote-bar-label"><span>{c.votes} votes</span><span>{pct}%</span></div>
+                    <div className="vote-bar-track"><div className="vote-bar-fill" style={{ width: pct + '%' }} /></div>
+                  </div>
+                  {isVotedFor ? (
+                    <button className="btn-vote voted-btn" disabled>✓ Your Vote</button>
+                  ) : (
+                    <button className="btn-vote" disabled={hasVoted} onClick={() => castVote(c)}>
+                      {hasVoted ? 'Voting Closed for You' : '🗳 Cast Vote'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PIE CHART (SVG) ─────────────────────────────────────────
+function PieChart({ data, totalVotes }) {
+  const size = 160; const cx = size/2; const cy = size/2; const r = 60;
+  let cumPct = 0;
+  const slices = data.filter(d => d.votes > 0).map(d => {
+    const pct = d.votes / totalVotes;
+    const start = cumPct; cumPct += pct;
+    return { ...d, start, end: cumPct };
+  });
+  const toXY = (pct) => {
+    const angle = pct * 2 * Math.PI - Math.PI / 2;
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+  };
+  return (
+    <div className="pie-chart-wrap">
+      <svg className="pie-svg" width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {totalVotes === 0 ? (
+          <circle cx={cx} cy={cy} r={r} fill="var(--cream)" />
+        ) : slices.map((s, i) => {
+          const [x1,y1] = toXY(s.start); const [x2,y2] = toXY(s.end);
+          const large = (s.end - s.start) > 0.5 ? 1 : 0;
+          return (
+            <path key={s.id}
+              d={`M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${large},1 ${x2},${y2} Z`}
+              fill={colorFor(s.id)} opacity="0.9"
+            />
+          );
+        })}
+        <circle cx={cx} cy={cy} r={r*0.55} fill="white" />
+        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="middle" fontSize="13" fontFamily="Syne" fontWeight="800">{totalVotes}</text>
+        <text x={cx} y={cy+14} textAnchor="middle" fontSize="8" fill="#7A7670">votes</text>
+      </svg>
+      <div className="pie-legend">
+        {data.slice(0,6).map(d => (
+          <div key={d.id} className="legend-item">
+            <div className="legend-dot" style={{ background: colorFor(d.id) }} />
+            <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>{d.name}</span>
+            <strong>{d.votes}</strong>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── RESULTS PAGE ────────────────────────────────────────────
+function ResultsPage({ candidates, totalVotes, users }) {
+  const sorted = [...candidates].sort((a, b) => b.votes - a.votes);
+  const winner = sorted[0];
+  const voterCount = users.filter(u => u.role === 'voter').length;
+  const votedCount = users.filter(u => u.voted).length;
+  const turnout = voterCount > 0 ? Math.round((votedCount / voterCount) * 100) : 0;
+
+  return (
+    <div className="page fade-in">
+      <div className="results-header">
+        <h2 className="results-lead">Live Election Results</h2>
+        <div className="dash-meta">
+          <span className="badge badge-green">🟢 Live</span>
+          <span className="badge badge-blue">📊 {totalVotes} votes</span>
+          <span className="badge badge-gold">📈 {turnout}% turnout</span>
+        </div>
+      </div>
+
+      {/* Summary stats */}
+      <div className="summary-stats">
+        <div className="summary-stat"><div className="num">{totalVotes}</div><div className="lbl">Total Votes</div></div>
+        <div className="summary-stat"><div className="num">{candidates.length}</div><div className="lbl">Candidates</div></div>
+        <div className="summary-stat"><div className="num">{voterCount}</div><div className="lbl">Registered Voters</div></div>
+        <div className="summary-stat"><div className="num">{turnout}%</div><div className="lbl">Voter Turnout</div></div>
+      </div>
+
+      {/* Winner spotlight */}
+      {winner && totalVotes > 0 && (
+        <div className="winner-spotlight">
+          <div className="winner-avatar" style={{ background: colorFor(winner.id) }}>{initials(winner.name)}</div>
+          <div className="winner-info">
+            <span className="crown">👑</span>
+            <div className="name">{winner.name}</div>
+            <div className="sub">{winner.party} · {winner.votes} votes · {totalVotes > 0 ? Math.round(winner.votes/totalVotes*100) : 0}% share</div>
+          </div>
+        </div>
+      )}
+
+      <div className="results-grid">
+        {/* Bar chart (results list) */}
+        <div className="results-card">
+          <h3>Vote Breakdown</h3>
+          {sorted.map((c, i) => {
+            const pct = totalVotes > 0 ? Math.round((c.votes / totalVotes) * 100) : 0;
+            return (
+              <div key={c.id} className="result-row">
+                <div className={`result-rank ${i === 0 ? 'gold' : ''}`}>#{i+1}</div>
+                <div className="result-avatar-sm" style={{ background: colorFor(c.id) }}>{initials(c.name)}</div>
+                <div className="result-info">
+                  <div className="result-name">{c.name}</div>
+                  <div className="result-party">{c.party}</div>
+                  <div className="result-bar-wrap">
+                    <div className="result-bar-track">
+                      <div className="result-bar-fill" style={{ width: pct + '%', background: colorFor(c.id) }} />
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="result-votes">{c.votes}</div>
+                  <div style={{fontSize:'0.72rem', color:'var(--muted)', textAlign:'right'}}>{pct}%</div>
+                </div>
+              </div>
+            );
+          })}
+          {totalVotes === 0 && <div style={{textAlign:'center', color:'var(--muted)', padding:'2rem'}}>No votes cast yet</div>}
+        </div>
+
+        {/* Pie chart */}
+        <div className="results-card">
+          <h3>Vote Distribution</h3>
+          <PieChart data={sorted} totalVotes={totalVotes} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ADMIN PAGE ──────────────────────────────────────────────
+function AdminPage({ currentUser, candidates, setCandidates, users, addToast, setModal, addLog }) {
+  const [form, setForm] = useState({ name:'', party:'', bio:'' });
+  const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const voters = users.filter(u => u.role === 'voter');
+
+  if (!currentUser || currentUser.role !== 'admin') {
+    return <div className="page"><div className="empty-state"><span className="empty-icon">🚫</span><div className="empty-title">Admin access only</div></div></div>;
+  }
+
+  const addCandidate = () => {
+    if (!form.name || !form.party) return addToast('Name and party are required.', 'error');
+    if (candidates.find(c => c.name.toLowerCase() === form.name.toLowerCase())) return addToast('Candidate already exists.', 'error');
+    const newC = { id: 'c' + Date.now(), name: form.name, party: form.party, bio: form.bio || 'No bio provided.', votes: 0 };
+    setCandidates(cs => [...cs, newC]);
+    setForm({ name:'', party:'', bio:'' });
+    addLog(`Admin added candidate: ${form.name}`, 'blue');
+    addToast(`Candidate "${form.name}" added.`, 'success');
+  };
+
+  const removeCandidate = (c) => {
+    setModal({
+      icon: '⚠️',
+      title: `Remove ${c.name}?`,
+      sub: `This will delete the candidate and their ${c.votes} vote(s). This cannot be undone.`,
+      confirmLabel: 'Remove',
+      onConfirm: () => {
+        setCandidates(cs => cs.filter(x => x.id !== c.id));
+        addLog(`Admin removed candidate: ${c.name}`, 'blue');
+        addToast(`Candidate removed.`, 'info');
+      }
+    });
+  };
+
+  return (
+    <div className="page fade-in">
+      <div className="dash-header">
+        <h2 className="dash-title">Admin Panel</h2>
+        <div className="dash-meta">
+          <span className="badge badge-blue">⚙️ {currentUser.name}</span>
+          <span className="badge badge-gold">{candidates.length} candidates · {voters.length} voters</span>
+        </div>
+      </div>
+      <div className="admin-grid">
+        {/* Add candidate */}
+        <div className="admin-card">
+          <h3>Add Candidate</h3>
+          <div className="form-group">
+            <label className="form-label">Full Name *</label>
+            <input className="form-input" placeholder="Candidate name" value={form.name} onChange={set('name')} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Party Name *</label>
+            <input className="form-input" placeholder="Party name" value={form.party} onChange={set('party')} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Bio / Manifesto</label>
+            <input className="form-input" placeholder="Short bio (optional)" value={form.bio} onChange={set('bio')} />
+          </div>
+          <button className="btn-primary btn-full" onClick={addCandidate}>+ Add Candidate</button>
+
+          <div style={{marginTop:'1.5rem'}}>
+            <h3>Candidate List</h3>
+            {candidates.map(c => (
+              <div key={c.id} className="candidate-list-item">
+                <div className="candi-avatar-xs" style={{ background: colorFor(c.id) }}>{initials(c.name)}</div>
+                <div>
+                  <div className="candi-name">{c.name}</div>
+                  <div className="candi-party">{c.party}</div>
+                </div>
+                <div className="candi-votes">{c.votes}</div>
+                <button className="btn-delete" onClick={() => removeCandidate(c)} title="Remove candidate">✕</button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Voters table */}
+        <div className="admin-card">
+          <h3>Registered Voters ({voters.length})</h3>
+          {voters.length === 0 ? (
+            <div style={{textAlign:'center', color:'var(--muted)', padding:'2rem'}}>No voters registered yet.</div>
+          ) : (
+            <div style={{overflowX:'auto'}}>
+              <table className="voters-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Voter ID</th>
+                    <th>Voted?</th>
+                    <th>Registered</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {voters.map(v => (
+                    <tr key={v.id}>
+                      <td>{v.name}</td>
+                      <td style={{fontFamily:'monospace', fontSize:'0.78rem'}}>{v.voterId}</td>
+                      <td>
+                        <span className={`badge ${v.voted ? 'badge-green' : 'badge-red'}`}>
+                          {v.voted ? '✓ Yes' : '○ No'}
+                        </span>
+                      </td>
+                      <td style={{fontSize:'0.78rem', color:'var(--muted)'}}>{new Date(v.registeredAt).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PROFILE PAGE ────────────────────────────────────────────
+function ProfilePage({ currentUser, candidates, activityLog }) {
+  if (!currentUser) {
+    return <div className="page"><div className="empty-state"><span className="empty-icon">👤</span><div className="empty-title">Please log in</div></div></div>;
+  }
+  const votedFor = candidates.find(c => c.id === currentUser.votedFor);
+  const totalVotes = candidates.reduce((s, c) => s + c.votes, 0);
+
+  return (
+    <div className="page fade-in">
+      <div className="dash-header">
+        <h2 className="dash-title">My Profile</h2>
+      </div>
+      <div className="profile-layout">
+        <div>
+          <div className="profile-card">
+            <div className="profile-avatar">{initials(currentUser.name)}</div>
+            <div className="profile-name">{currentUser.name}</div>
+            <div className="profile-id">{currentUser.voterId}</div>
+            <span className={`badge ${currentUser.role === 'admin' ? 'badge-blue' : 'badge-gold'}`} style={{margin:'0 auto 1rem'}}>
+              {currentUser.role === 'admin' ? '⚙️ Admin' : '🗳 Voter'}
+            </span>
+            <div className="profile-info-grid">
+              <div className="info-row">
+                <span className="info-label">Email</span>
+                <span className="info-value">{currentUser.email}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">Voter ID</span>
+                <span className="info-value" style={{fontFamily:'monospace'}}>{currentUser.voterId}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">Role</span>
+                <span className="info-value" style={{textTransform:'capitalize'}}>{currentUser.role}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">Registered</span>
+                <span className="info-value">{new Date(currentUser.registeredAt).toLocaleDateString()}</span>
+              </div>
+              <div className="info-row">
+                <span className="info-label">Vote Status</span>
+                <span className="info-value" style={{color: currentUser.voted ? 'var(--green)' : 'var(--red)'}}>
+                  {currentUser.voted ? '✓ Voted' : '○ Not yet voted'}
+                </span>
+              </div>
+              {votedFor && (
+                <div className="info-row">
+                  <span className="info-label">Voted For</span>
+                  <span className="info-value">{votedFor.name} · {Math.round(votedFor.votes/totalVotes*100)}% share</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="activity-log">
+          <h3>Activity Log</h3>
+          {activityLog.length === 0 ? (
+            <div style={{color:'var(--muted)', fontSize:'0.9rem'}}>No activity yet.</div>
+          ) : activityLog.map((e, i) => (
+            <div key={i} className="log-entry">
+              <div className={`log-icon ${e.icon}`}>{e.icon === 'green' ? '✅' : 'ℹ️'}</div>
+              <div>
+                <div className="log-text">{e.text}</div>
+                <div className="log-time">{fmtTime(e.ts)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ══════════════════════════════════════════════════════
+ * BACKEND ARCHITECTURE NOTES (for Node/Express + MongoDB)
+ * ══════════════════════════════════════════════════════
+ *
+ * FOLDER STRUCTURE:
+ * electra/
+ * ├── client/                  ← React frontend (this file)
+ * │   └── src/App.jsx
+ * ├── server/
+ * │   ├── index.js             ← Express entry point
+ * │   ├── routes/
+ * │   │   ├── auth.js          ← POST /api/register, POST /api/login
+ * │   │   ├── candidates.js    ← GET/POST/DELETE /api/candidates
+ * │   │   ├── vote.js          ← POST /api/vote
+ * │   │   └── results.js       ← GET /api/results
+ * │   ├── models/
+ * │   │   ├── User.js          ← mongoose schema
+ * │   │   └── Candidate.js
+ * │   ├── middleware/
+ * │   │   ├── auth.js          ← JWT verification
+ * │   │   └── adminOnly.js
+ * │   └── .env
+ * └── package.json
+ *
+ * KEY BACKEND CODE:
+ *
+ * // User schema
+ * const UserSchema = new mongoose.Schema({
+ *   name: String, email: { type: String, unique: true },
+ *   password: String,  // bcrypt hash
+ *   role: { type: String, enum: ['voter','admin'], default: 'voter' },
+ *   voterId: { type: String, unique: true },
+ *   voted: { type: Boolean, default: false },
+ *   votedFor: { type: mongoose.Types.ObjectId, ref: 'Candidate' }
+ * });
+ *
+ * // Vote route (with duplicate prevention)
+ * router.post('/vote', authMiddleware, async (req, res) => {
+ *   const user = await User.findById(req.user.id);
+ *   if (user.voted) return res.status(403).json({ error: 'Already voted' });
+ *   await Candidate.findByIdAndUpdate(req.body.candidateId, { $inc: { votes: 1 } });
+ *   await User.findByIdAndUpdate(req.user.id, { voted: true, votedFor: req.body.candidateId });
+ *   res.json({ success: true });
+ * });
+ *
+ * TO RUN:
+ * 1. npm install express mongoose bcryptjs jsonwebtoken dotenv cors
+ * 2. Set MONGO_URI and JWT_SECRET in .env
+ * 3. node server/index.js
+ * 4. cd client && npm install && npm start
+ */
